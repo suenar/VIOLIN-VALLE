@@ -44,16 +44,21 @@ logger = logging.getLogger(__name__)
 class ReaperMIDIRenderer:
     """Handles MIDI to audio rendering in Reaper."""
     
-    def __init__(self, plugin_name: Optional[str] = None, sample_rate: int = 44100):
+    def __init__(self, plugin_name: Optional[str] = None, sample_rate: int = 44100,
+                 fx_chain: Optional[str] = None, track_template: Optional[str] = None):
         """
         Initialize the Reaper MIDI renderer.
         
         Args:
-            plugin_name: Name of the VST/VST3i plugin to use (e.g., "VST3: Kontakt 7")
+            plugin_name: Name of the VST/VST3i plugin to use (e.g., "VST3: Kontakt 8")
             sample_rate: Sample rate for audio rendering (default: 44100)
+            fx_chain: Path to FX chain file (.RfxChain) with pre-configured plugin
+            track_template: Path to track template file (.RTrackTemplate) with pre-configured plugin
         """
         self.plugin_name = plugin_name
         self.sample_rate = sample_rate
+        self.fx_chain = fx_chain
+        self.track_template = track_template
         self.project = None
         
     def connect_to_reaper(self):
@@ -68,6 +73,38 @@ class ReaperMIDIRenderer:
             logger.error(f"Failed to connect to Reaper: {e}")
             logger.error("Make sure Reaper is running and ReaScript API is enabled.")
             logger.error("In Reaper: Options -> Preferences -> Plug-ins -> ReaScript -> Enable Python for use with ReaScript")
+            return False
+    
+    def _load_fx_chain(self, track, fx_chain_path: str) -> bool:
+        """
+        Load an FX chain file to a track.
+        
+        Args:
+            track: Reaper track object
+            fx_chain_path: Path to .RfxChain file
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not os.path.exists(fx_chain_path):
+            logger.error(f"FX chain file not found: {fx_chain_path}")
+            return False
+        
+        try:
+            # Use ReaScript API to load FX chain
+            success = reapy.reascript_api.TrackFX_AddByName(
+                track.id, fx_chain_path, False, -1000  # -1000 = add from FX chain file
+            )
+            
+            # Check if any FX were added
+            if track.n_fxs > 0:
+                return True
+            else:
+                logger.error("No FX were added from chain file")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error loading FX chain: {e}")
             return False
     
     def list_available_plugins(self) -> List[str]:
@@ -141,12 +178,27 @@ class ReaperMIDIRenderer:
             
             item = track.items[0]
             
-            # Load VST/VST3i plugin on the track
-            if plugin_name:
+            # Load plugin using FX chain, track template, or direct plugin
+            if self.fx_chain:
+                # Load FX chain (includes plugin with preset/state)
+                logger.info(f"Loading FX chain: {self.fx_chain}")
+                try:
+                    success = self._load_fx_chain(track, self.fx_chain)
+                    if not success:
+                        logger.error("Failed to load FX chain")
+                        return False
+                    logger.info("FX chain loaded successfully")
+                except Exception as e:
+                    logger.error(f"Failed to load FX chain: {e}")
+                    return False
+            elif plugin_name:
+                # Load plugin directly
                 logger.info(f"Loading plugin: {plugin_name}")
                 try:
                     fx = track.add_fx(plugin_name)
                     logger.info(f"Plugin loaded successfully")
+                    logger.warning("⚠️  Note: Kontakt and similar plugins may need instrument selection!")
+                    logger.warning("   Consider using --fx-chain with a pre-configured preset")
                 except Exception as e:
                     logger.error(f"Failed to load plugin '{plugin_name}': {e}")
                     logger.error("Available plugin name formats:")
@@ -320,7 +372,21 @@ Note: Reaper must be running before executing this script!
         '-p', '--plugin',
         type=str,
         default=None,
-        help='VST/VST3i plugin name (e.g., "VST3: Kontakt 7", "VSTi: Spitfire Audio")'
+        help='VST/VST3i plugin name (e.g., "VST3: Kontakt 8", "VSTi: Spitfire Audio")'
+    )
+    
+    parser.add_argument(
+        '-fx', '--fx-chain',
+        type=str,
+        default=None,
+        help='Path to FX chain file (.RfxChain) with pre-configured plugin and instrument'
+    )
+    
+    parser.add_argument(
+        '-tt', '--track-template',
+        type=str,
+        default=None,
+        help='Path to track template file (.RTrackTemplate) with pre-configured setup'
     )
     
     parser.add_argument(
@@ -334,6 +400,12 @@ Note: Reaper must be running before executing this script!
         '--list-plugins',
         action='store_true',
         help='Show information about plugin naming format and exit'
+    )
+    
+    parser.add_argument(
+        '--setup-kontakt',
+        action='store_true',
+        help='Show guide for setting up Kontakt 8 with instruments'
     )
     
     args = parser.parse_args()
@@ -354,7 +426,7 @@ Note: Reaper must be running before executing this script!
         print("  VST: Plugin Name (Manufacturer)")
         print("  VSTi: Plugin Name")
         print("\nExample plugin names:")
-        print("  - 'VST3: Kontakt 7 (Native Instruments)'")
+        print("  - 'VST3: Kontakt 8 (Native Instruments)'")
         print("  - 'VST: Spitfire Audio Violin (Spitfire Audio)'")
         print("  - 'VSTi: Halion Sonic SE'")
         print("  - 'VST3: BBC Symphony Orchestra (Spitfire Audio)'")
@@ -362,14 +434,86 @@ Note: Reaper must be running before executing this script!
         print("="*60 + "\n")
         return
     
+    # Handle --setup-kontakt
+    if args.setup_kontakt:
+        print("\n" + "="*70)
+        print("KONTAKT 8 SETUP GUIDE - Loading Instruments Automatically")
+        print("="*70)
+        print("\n⚠️  IMPORTANT: Kontakt requires instrument selection!")
+        print("Simply loading 'VST3: Kontakt 8' will produce empty audio.\n")
+        print("SOLUTION: Use FX Chain Presets")
+        print("-" * 70)
+        print("\n📋 STEP-BY-STEP SETUP:\n")
+        print("1️⃣  CREATE FX CHAIN WITH KONTAKT + INSTRUMENT")
+        print("   a. Open Reaper")
+        print("   b. Add a track (Ctrl+T)")
+        print("   c. Click FX button on the track")
+        print("   d. Add 'VST3: Kontakt 8 (Native Instruments)'")
+        print("   e. In Kontakt, load your violin instrument")
+        print("      (e.g., browse to violin library and select preset)")
+        print("   f. Configure any settings (velocity, expression, etc.)")
+        print("")
+        print("2️⃣  SAVE THE FX CHAIN")
+        print("   a. In the FX window, click the '+' menu")
+        print("   b. Select 'Save FX chain...'")
+        print("   c. Name it: 'Kontakt_Violin' (or similar)")
+        print("   d. Save to: FXChains folder (default location)")
+        print("   e. Note the full path (usually in AppData/REAPER/FXChains/)")
+        print("")
+        print("3️⃣  USE FX CHAIN IN THE SCRIPT")
+        print("   python reaper_midi_to_audio.py \\")
+        print("       -i ./midi_files \\")
+        print("       -o ./output \\")
+        print("       -fx '/path/to/FXChains/Kontakt_Violin.RfxChain'")
+        print("")
+        print("-" * 70)
+        print("\n💡 ALTERNATIVE: Track Templates")
+        print("-" * 70)
+        print("\nYou can also save entire track configurations:")
+        print("1. Set up track with Kontakt + instrument + any routing")
+        print("2. Right-click track → Save track as template...")
+        print("3. Use with: -tt '/path/to/track_template.RTrackTemplate'")
+        print("")
+        print("-" * 70)
+        print("\n📁 TYPICAL FX CHAIN LOCATIONS:")
+        print("-" * 70)
+        print("Windows: C:\\Users\\YourName\\AppData\\Roaming\\REAPER\\FXChains\\")
+        print("Mac: ~/Library/Application Support/REAPER/FXChains/")
+        print("Linux: ~/.config/REAPER/FXChains/")
+        print("")
+        print("-" * 70)
+        print("\n✅ EXAMPLE WORKFLOW:")
+        print("-" * 70)
+        print("# After creating 'Kontakt_Violin.RfxChain' with your setup:")
+        print("")
+        print("python reaper_midi_to_audio.py \\")
+        print("    -i ../samples \\")
+        print("    -o ./violin_output \\")
+        print("    -fx ~/.config/REAPER/FXChains/Kontakt_Violin.RfxChain")
+        print("")
+        print("="*70 + "\n")
+        return
+    
     # Validate required arguments
     if not args.input_dir or not args.output_dir:
-        parser.error("--input_dir and --output_dir are required (or use --list-plugins)")
+        parser.error("--input_dir and --output_dir are required (or use --list-plugins / --setup-kontakt)")
+    
+    # Validate FX options
+    if args.fx_chain and args.track_template:
+        parser.error("Cannot use both --fx-chain and --track-template. Choose one.")
+    
+    if args.fx_chain and not os.path.exists(args.fx_chain):
+        parser.error(f"FX chain file not found: {args.fx_chain}")
+    
+    if args.track_template and not os.path.exists(args.track_template):
+        parser.error(f"Track template file not found: {args.track_template}")
     
     # Initialize renderer
     renderer = ReaperMIDIRenderer(
         plugin_name=args.plugin,
-        sample_rate=args.sample_rate
+        sample_rate=args.sample_rate,
+        fx_chain=args.fx_chain,
+        track_template=args.track_template
     )
     
     # Connect to Reaper
@@ -380,10 +524,21 @@ Note: Reaper must be running before executing this script!
     # Process directory
     logger.info(f"\nInput directory: {args.input_dir}")
     logger.info(f"Output directory: {args.output_dir}")
-    if args.plugin:
+    
+    if args.fx_chain:
+        logger.info(f"FX Chain: {args.fx_chain}")
+        logger.info("✓ Using pre-configured FX chain (instrument already loaded)")
+    elif args.track_template:
+        logger.info(f"Track Template: {args.track_template}")
+        logger.info("✓ Using track template (instrument already loaded)")
+    elif args.plugin:
         logger.info(f"Plugin: {args.plugin}")
+        if "kontakt" in args.plugin.lower():
+            logger.warning("⚠️  Kontakt detected - may need instrument selection!")
+            logger.warning("   Use --setup-kontakt to learn how to use FX chains")
     else:
         logger.warning("No plugin specified - will use default MIDI synth")
+    
     logger.info(f"Sample rate: {args.sample_rate} Hz\n")
     
     # Process all files

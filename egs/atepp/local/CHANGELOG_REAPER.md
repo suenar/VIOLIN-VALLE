@@ -1,5 +1,34 @@
 # Changelog - Reaper MIDI to Audio Scripts
 
+## [1.1.0] - 2025-10-28
+
+### Added - Kontakt 8 Support
+- **FX Chain support**: New `--fx-chain` option to load pre-configured plugin chains
+- **Track Template support**: New `--track-template` option for track templates
+- **Kontakt setup guide**: New `--setup-kontakt` flag shows comprehensive setup instructions
+- **Interactive FX chain creator**: New `create_kontakt_fx_chain.py` helper script
+- **Comprehensive Kontakt guide**: New `KONTAKT_GUIDE.md` with complete workflow documentation
+
+### Features
+- Automatic Kontakt detection with helpful warnings
+- FX chain file validation
+- Support for any multi-instrument VST (not just Kontakt)
+- Pre-configured instrument loading via FX chains
+- Detailed step-by-step guides for Kontakt setup
+
+### Files Added
+- `create_kontakt_fx_chain.py` - Interactive FX chain creation helper
+- `KONTAKT_GUIDE.md` - Comprehensive Kontakt integration guide (338 lines)
+
+### Changes
+- Enhanced `ReaperMIDIRenderer` class with FX chain and track template support
+- Added `_load_fx_chain()` method for loading .RfxChain files
+- Updated argument parser with `--fx-chain`, `--track-template`, `--setup-kontakt`
+- Improved logging to show FX chain usage
+- Better error messages for Kontakt users
+
+---
+
 ## [1.0.1] - 2025-10-28
 
 ### Fixed
