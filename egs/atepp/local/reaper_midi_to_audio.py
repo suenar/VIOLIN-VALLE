@@ -91,20 +91,109 @@ class ReaperMIDIRenderer:
             return False
         
         try:
-            # Use ReaScript API to load FX chain
-            success = reapy.reascript_api.TrackFX_AddByName(
-                track.id, fx_chain_path, False, -1000  # -1000 = add from FX chain file
+            # Get initial FX count
+            initial_fx_count = track.n_fxs
+            
+            # Read the FX chain file and parse it
+            # The proper way is to use SetFXChain which loads from file content
+            with open(fx_chain_path, 'r') as f:
+                fx_chain_content = f.read()
+            
+            # Use TrackFX_SetNamedConfigParm or SetFXChain to load the chain
+            # The correct approach is to use the track's method to set the chain
+            success = reapy.reascript_api.TrackFX_SetNamedConfigParm(
+                track.id, 
+                -1,  # -1 means entire FX chain
+                'chain_load',
+                fx_chain_path
             )
             
+            # Alternative: Try using command to load FX chain
+            if track.n_fxs == initial_fx_count:
+                # First method didn't work, try reading and setting the chain directly
+                try:
+                    # Set the FX chain using the file content
+                    chain_set = reapy.reascript_api.GetSetTrackSendInfo(
+                        track.id, 0, "P_TRACK", 0, False
+                    )
+                    
+                    # If that doesn't work, use the file reading approach
+                    # Actually, let's just add each FX from the chain manually
+                    # Read the chain file and extract plugin names
+                    logger.info("Attempting to parse and load FX chain manually...")
+                    return self._load_fx_chain_manual(track, fx_chain_content)
+                except:
+                    pass
+            
             # Check if any FX were added
-            if track.n_fxs > 0:
+            if track.n_fxs > initial_fx_count:
+                logger.info(f"✓ Added {track.n_fxs - initial_fx_count} FX from chain")
                 return True
             else:
                 logger.error("No FX were added from chain file")
-                return False
+                logger.info("Trying alternative method...")
+                return self._load_fx_chain_manual(track, fx_chain_content)
                 
         except Exception as e:
             logger.error(f"Error loading FX chain: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def _load_fx_chain_manual(self, track, fx_chain_content: str) -> bool:
+        """
+        Manually parse and load FX from chain file content.
+        
+        Args:
+            track: Reaper track object
+            fx_chain_content: Content of .RfxChain file
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            import re
+            
+            # Parse the FX chain file to extract plugin information
+            # Look for lines like: <VST "VST3: Kontakt 8 (Native Instruments)"
+            vst_pattern = r'<VST[3]?\s+"([^"]+)"'
+            matches = re.findall(vst_pattern, fx_chain_content)
+            
+            if not matches:
+                # Try alternative patterns
+                vst_pattern = r'<(VST[3i]*:\s*[^>]+)>'
+                matches = re.findall(vst_pattern, fx_chain_content)
+            
+            if not matches:
+                logger.error("Could not parse plugin names from FX chain file")
+                logger.info("FX chain file content preview:")
+                logger.info(fx_chain_content[:500])
+                return False
+            
+            logger.info(f"Found {len(matches)} plugin(s) in FX chain")
+            
+            # Add each plugin
+            for plugin_name in matches:
+                logger.info(f"Loading plugin: {plugin_name}")
+                try:
+                    fx = track.add_fx(plugin_name)
+                    logger.info(f"✓ Added: {plugin_name}")
+                    
+                    # TODO: Parse and apply plugin state from chain file
+                    # This is complex and may require additional parsing
+                    logger.warning("⚠️  Plugin loaded but state/preset may not be applied")
+                    logger.warning("   You may need to manually configure the plugin")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to add plugin '{plugin_name}': {e}")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error in manual FX chain loading: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def list_available_plugins(self) -> List[str]:
