@@ -124,13 +124,11 @@ class ReaperMIDIRenderer:
             track = self.project.add_track()
             track.name = f"MIDI - {Path(midi_path).stem}"
             
-            # Import MIDI file to track
+            # Reset edit cursor to position 0 to ensure MIDI imports at start
             logger.info(f"Importing MIDI file: {midi_path}")
-            # Insert MIDI file as media item
-            item = track.add_midi_item(0, 10)  # Start at 0, 10 seconds default length
+            reapy.reascript_api.SetEditCurPos(0, True, False)  # Set cursor to 0
             
-            # Alternative method using ReaScript API directly
-            # This imports the MIDI file properly
+            # Import MIDI file at cursor position (now at 0)
             import_result = reapy.reascript_api.InsertMedia(midi_path, 0)
             if import_result == 0:
                 logger.error(f"Failed to import MIDI file: {midi_path}")

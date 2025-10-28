@@ -71,7 +71,10 @@ def import_midi_to_track(midi_path, track):
         midi_path: Path to MIDI file
         track: Reaper track object
     """
-    # Insert MIDI file at position 0 on the track
+    # Reset edit cursor to position 0 to ensure MIDI imports at start
+    RPR_SetEditCurPos(0, True, False)  # Set cursor to 0, moveview=True, seekplay=False
+    
+    # Insert MIDI file at cursor position (now at 0)
     RPR_InsertMedia(midi_path, 0)  # Mode 0 = insert as new items on existing tracks
     RPR_UpdateArrange()
     
