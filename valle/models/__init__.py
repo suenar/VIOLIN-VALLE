@@ -12,6 +12,7 @@ from .macros import (
 )
 from .transformer import Transformer
 from .valle import VALLE, VALLF
+from .audio_lm import AudioLM
 # from .visualizer import visualize
 
 
@@ -121,6 +122,17 @@ def get_model(params: AttributeDict) -> nn.Module:
             nar_scale_factor=params.scale_factor,
             prepend_bos=params.prepend_bos,
             num_quantizers=params.num_quantizers,
+        )
+    elif params.model_name.lower() in ["audio-lm", "audiolm"]:
+        model = AudioLM(
+            params.decoder_dim,
+            params.nhead,
+            params.num_decoder_layers,
+            norm_first=params.norm_first,
+            add_prenet=params.add_prenet,
+            num_quantizers=params.num_quantizers,
+            max_seq_len=getattr(params, 'max_seq_len', 2048),
+            dropout=getattr(params, 'dropout', 0.1),
         )
     else:
         assert params.model_name in ["Transformer"]
