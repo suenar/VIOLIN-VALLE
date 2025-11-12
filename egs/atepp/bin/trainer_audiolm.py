@@ -39,9 +39,15 @@ def compute_loss_audiolm(
     Compute loss for AudioLM model.
     
     Key differences from standard VALLE:
-    - No text/MIDI input
-    - Only audio tokens as input
-    - All autoregressive generation
+    - Input x: prompt audio tokens (conditioning, e.g., 3-5 seconds)
+    - Input y: target audio tokens (what to predict, e.g., next 5-10 seconds)
+    - Still uses AR (1st quantizer) + NAR (remaining quantizers) structure
+    
+    To prepare data:
+    - Take a long audio sequence (e.g., 10-15 seconds)
+    - Split into prompt (first 3-5 seconds) and target (remaining)
+    - x = prompt audio tokens
+    - y = target audio tokens
     """
     device = (
         model.device
@@ -49,19 +55,48 @@ def compute_loss_audiolm(
         else next(model.parameters()).device
     )
     
-    # Get audio features only (no text/MIDI)
+    # Get audio features
     audio_features = batch["audio_features"].to(device)
     audio_features_lens = batch["audio_features_lens"].to(device)
     assert audio_features.ndim == 3  # (B, T, Q)
     
+    # Split audio into prompt and target
+    # For training, we can use a sliding window or fixed split
+    # Here we use first 40% as prompt, rest as target
+    batch_size, total_len, num_q = audio_features.shape
+    
+    # Calculate split point for each sample in batch
+    split_points = (audio_features_lens * 0.4).long()
+    split_points = torch.clamp(split_points, min=50, max=total_len // 2)
+    
+    # For simplicity, use the minimum split point for the whole batch
+    # In practice, you might want to handle variable lengths more carefully
+    split_point = split_points.min().item()
+    
+    # Split into prompt (x) and target (y)
+    x = audio_features[:, :split_point, :]
+    y = audio_features[:, split_point:, :]
+    
+    # Adjust lengths
+    x_lens = torch.full_like(audio_features_lens, split_point)
+    x_lens = torch.clamp(x_lens, max=split_point)
+    
+    y_lens = audio_features_lens - split_point
+    y_lens = torch.clamp(y_lens, min=1)
+    
     with torch.set_grad_enabled(is_training):
         # Forward pass - model expects:
-        # - audio_tokens: (B, T, Q)
-        # - audio_lens: (B,)
+        # - x: prompt audio tokens (B, S, Q)
+        # - x_lens: prompt lengths (B,)
+        # - y: target audio tokens (B, T, Q)
+        # - y_lens: target lengths (B,)
         predicts, loss, metrics = model(
-            audio_tokens=audio_features,
-            audio_lens=audio_features_lens,
+            x=x,
+            x_lens=x_lens,
+            y=y,
+            y_lens=y_lens,
             reduction="sum",
+            train_stage=params.train_stage,
         )
     
     assert loss.requires_grad == is_training
@@ -69,7 +104,7 @@ def compute_loss_audiolm(
     info = MetricsTracker()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        info["frames"] = (audio_features_lens).sum().item()
+        info["frames"] = y_lens.sum().item()
         info["utterances"] = audio_features.size(0)
     
     # Note: We use reduction=sum while computing the loss.
