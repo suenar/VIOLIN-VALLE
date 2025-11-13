@@ -373,11 +373,13 @@ class VALLF(nn.Module):
             y_prompts = self.nar_audio_embeddings[0](y[:, :prefix_len])
             y_emb = self.nar_audio_embeddings[0](y[:, prefix_len:])
             for j in range(1, self.num_quantizers):
-                y_prompts += self.nar_audio_embeddings[j](
+                # Modify y_prompts += xxx to y_prompts = y_prompts + xxx to avoid inplace operation
+                y_prompts = y_prompts + self.nar_audio_embeddings[j](
                     codes[:, :prefix_len, j]
                 )
                 if j < nar_stage:
-                    y_emb += self.nar_audio_embeddings[j](
+                    # Modify y_emb += xxx to y_emb= y_emb + xxx to avoid inplace operation
+                    y_emb = y_emb + self.nar_audio_embeddings[j](
                         codes[:, prefix_len:, j]
                     )
             y_emb = torch.concat([y_prompts, y_emb], axis=1)
@@ -855,6 +857,18 @@ class VALLE(VALLF):
         x_mask = make_pad_mask(x_lens).to(x.device)
         y_mask = make_pad_mask(y_lens).to(y.device)
         y_mask_int = y_mask.type(torch.int64)
+
+        if y_mask_int.shape[1] != y.shape[1]:
+            # Sunan: This should not happen actually
+            # But due to some data points, we have to pad or trim here
+            if y_mask_int.shape[1] < y.shape[1]:
+                pad_len = y.shape[1] - y_mask_int.shape[1]
+                y_mask_int = torch.cat([
+                    y_mask_int, 
+                    torch.ones(y_mask_int.shape[0], pad_len, dtype=torch.int64, device=y.device)
+                ], dim=1)
+            else:
+                y_mask_int = y_mask_int[:, :y.shape[1]]
 
         text = x
         ########## 

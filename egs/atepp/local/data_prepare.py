@@ -123,6 +123,7 @@ def seg_one(midi_wav_args_list):
     seg_points = [0]
     while seg_points[-1] < duration:
         next_point = seg_points[-1] + np.random.uniform(min_duration, max_duration)
+        # next_point = seg_points[-1] + 3 # used for prompt generation
         if next_point < duration:
             seg_points.append(next_point)
         else:
@@ -339,32 +340,36 @@ def get_midi_audio_pairs(data_path, out_path, audio=True):
 
     midi_wav_args_list = []
     for midi_file in tqdm(midi_files):
-        dataset = midi_file.split("/")[-3] 
-        basename = os.path.basename(midi_file).split(".")[0]
-        duration = pretty_midi.PrettyMIDI(midi_file).get_end_time()
-
+        try:
+            dataset = midi_file.split("/")[-3] 
+            basename = os.path.basename(midi_file).split(".")[0]
+            duration = pretty_midi.PrettyMIDI(midi_file).get_end_time()
+        except Exception as e:
+            logger.warning(f'Reading file {basename} error, skip this file')
+            continue
         if audio:
-            if dataset == "ATEPP":
-                audio_file = midi_file.replace(".mid", ".mp3").replace("midi", "audio")
-            elif dataset == "pijama":
-                audio_file = midi_file.replace(".midi", ".mp3").replace("midi", "audio")
-            elif dataset == "maestro":
-                audio_file = midi_file.replace(".mid", ".mp3").replace("midi", "audio")
-            else:
-                audio_file = midi_file.replace(".mid", ".mp3").replace("midi", "audio")
-                dataset = "test"
-
+            # if dataset == "ATEPP":
+            #     audio_file = midi_file.replace(".mid", ".mp3").replace("midi", "audio")
+            # elif dataset == "pijama":
+            #     audio_file = midi_file.replace(".midi", ".mp3").replace("midi", "audio")
+            # elif dataset == "maestro":
+            #     audio_file = midi_file.replace(".mid", ".mp3").replace("midi", "audio")
+            # else:
+            #     audio_file = midi_file.replace(".mid", ".mp3").replace("midi", "audio")
+            #     dataset = "test"
+            audio_file = midi_file.replace(".mid", ".wav").replace(".midi", ".wav")
+            dataset = "train"
             if not os.path.exists(audio_file):
                 logger.warning(f"Audio file {audio_file} does not exist for {basename}. Skipping.")
                 continue
             
         else:
             audio_file = None
-            dataset = "test"
+            dataset = "train"
        
         midi_wav_args_list.append([
             duration, audio_file, midi_file, basename, 0,
-            data_path, os.path.join(out_path, dataset), "test"
+            data_path, os.path.join(out_path, dataset), "train"
         ])
         
     return midi_wav_args_list
@@ -402,9 +407,7 @@ def concat_prompts_with_original(data_path: str, dataset: str, prompt_dir: str):
 
 def prepare_segments(data_path, out_path, audio=True):
     logger.info("Stage 0: Generating MIDI-Audio Pairs")
-
     args_list = get_midi_audio_pairs(data_path, out_path, audio=audio)
-    print(args_list)
     with multiprocessing.Pool(processes=8) as pool:
         if audio:
             for _ in tqdm(pool.imap(seg_one, args_list), total=len(args_list)):
