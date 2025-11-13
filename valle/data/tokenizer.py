@@ -274,6 +274,40 @@ class AudioTokenizer32FT:
     def decode(self, frames: torch.Tensor, scales) -> torch.Tensor:
         return self.codec.decode(frames, scales)
 
+class AudioTokenizer32Violin:
+    """EnCodec 32 hz audio."""
+
+    def __init__(
+        self,
+        device: Any = None,
+    ) -> None:
+        # Instantiate a pretrained EnCodec model
+        # model = CompressionModel.get_pretrained('facebook/encodec_32khz')
+        model = CompressionModel.get_pretrained('/home/smg/v-sunan/VIOLIN-VALLE/egs/atepp/checkpoints/compression_32khz_violin_new.bin')
+        
+        if not device:
+            device = torch.device("cpu")
+            if torch.cuda.is_available():
+                device = torch.device("cuda")
+
+        self._device = device
+
+        self.codec = model.to(device)
+        self.sample_rate = model.sample_rate
+        self.channels = model.channels
+
+    @property
+    def device(self):
+        return self._device
+
+    def encode(self, wav: torch.Tensor) -> torch.Tensor:
+        encoding = self.codec.encode(wav.to(self.device))
+        return encoding
+
+    def decode(self, frames: torch.Tensor, scales) -> torch.Tensor:
+        return self.codec.decode(frames, scales)
+
+
 class AudioTokenizer:
     """EnCodec audio."""
 
@@ -640,8 +674,100 @@ class AudioTokenExtractor32FT(FeatureExtractor):
             )
             batch_codes.append(codes[..., :expected_num_frames])
         return [codes.cpu().permute(1, 0).numpy() for codes in batch_codes]
+    
+class AudioTokenExtractor32Violin(FeatureExtractor):
+    name = "encodec32violin"
+    config_type = AudioTokenConfig32
+    
+    def __init__(self, config: Optional[Any] = None):
+        super(AudioTokenExtractor32Violin, self).__init__(config)
+        self.tokenizer = AudioTokenizer32Violin()
 
+    def extract(
+        self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
+    ) -> np.ndarray:
+        if not isinstance(samples, torch.Tensor):
+            samples = torch.from_numpy(samples)
+        if sampling_rate != self.tokenizer.sample_rate:
+            samples = convert_audio(
+                samples,
+                sampling_rate,
+                self.tokenizer.sample_rate,
+                self.tokenizer.channels,
+            )
+        if len(samples.shape) == 2:
+            samples = samples.unsqueeze(0)
+        else:
+            raise ValueError()
 
+        device = self.tokenizer.device
+        encoded_frames, scales = self.tokenizer.encode(samples.detach().to(device))
+        # codes = encoded_frames[0][0]  # [B, n_q, T]
+        codes = encoded_frames
+        if True:
+            duration = round(samples.shape[-1] / sampling_rate, ndigits=12)
+            expected_num_frames = compute_num_frames(
+                duration=duration,
+                frame_shift=self.frame_shift,
+                sampling_rate=sampling_rate,
+            )
+            assert abs(codes.shape[-1] - expected_num_frames) <= 1
+            codes = codes[..., :expected_num_frames]
+        return codes.cpu().squeeze(0).permute(1, 0).numpy()
+
+    def pad_tensor_list(self, tensor_list, device, padding_value=0):
+        # 计算每个张量的长度
+        lengths = [tensor.shape[0] for tensor in tensor_list]
+        # 使用pad_sequence函数进行填充
+        tensor_list = [torch.Tensor(t).to(device) for t in tensor_list]
+        padded_tensor = torch.nn.utils.rnn.pad_sequence(
+            tensor_list, batch_first=True, padding_value=padding_value
+        )
+        return padded_tensor, lengths
+
+    @property
+    def frame_shift(self) -> Seconds:
+        return self.config.frame_shift
+
+    def feature_dim(self, sampling_rate: int) -> int:
+        return self.config.num_quantizers
+    
+    def extract_batch(self, samples, sampling_rate, lengths) -> np.ndarray:
+        samples = [wav.squeeze() for wav in samples]
+        device = self.tokenizer.device
+        samples, lengths = self.pad_tensor_list(samples, device)
+        samples = samples.unsqueeze(1)
+        if not isinstance(samples, torch.Tensor):
+            samples = torch.from_numpy(samples)
+        if len(samples.shape) != 3:
+            raise ValueError()
+                
+        if sampling_rate != self.tokenizer.sample_rate:
+            samples = [
+                convert_audio(
+                    wav,
+                    sampling_rate,
+                    self.tokenizer.sample_rate,
+                    self.tokenizer.channels,
+                )
+                for wav in samples.cpu()
+            ]
+        # samples = torch.tensor(samples) # convert samples from list to tensor
+        # Extract discrete codes from EnCodec
+        with torch.no_grad():
+            encoded_frames, scales = self.tokenizer.encode(samples.detach().to(device))
+        # encoded_frames = encoded_frames[0][0]  # [B, n_q, T]
+        batch_codes = []
+        for b, length in enumerate(lengths):
+            codes = encoded_frames[b]
+            duration = round(length / sampling_rate, ndigits=12)
+            expected_num_frames = compute_num_frames(
+                duration=duration,
+                frame_shift=self.frame_shift,
+                sampling_rate=sampling_rate,
+            )
+            batch_codes.append(codes[..., :expected_num_frames])
+        return [codes.cpu().permute(1, 0).numpy() for codes in batch_codes]
 
 if __name__ == "__main__":
     model = EncodecModel.encodec_model_24khz()

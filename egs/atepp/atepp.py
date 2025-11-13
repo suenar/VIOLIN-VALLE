@@ -16,7 +16,7 @@ from lhotse.qa import fix_manifests
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
-def prepare_atepp(
+def prepare_gigamidi(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None, tokenizer: str = "expression" \
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
@@ -51,9 +51,9 @@ def prepare_atepp(
     dataset_parts = ["test", "validation", "train"]
     for part in tqdm(
         dataset_parts,
-        desc="Process atepp audio and text, it takes about 160 seconds.",
+        desc="Process gigamidi audio and text, it takes about 160 seconds.",
     ):
-        logging.info(f"Processing atepp subset: {part}")
+        logging.info(f"Processing gigamidi subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
@@ -72,7 +72,7 @@ def prepare_atepp(
                 continue
             recording = Recording.from_file(audio_path)
             if recording.duration <= 0:
-                print(audio_path)
+                print('Ignore', audio_path, 'as Duration Is 0')
                 continue
             recordings.append(recording)
             segment = SupervisionSegment(
@@ -94,9 +94,9 @@ def prepare_atepp(
 
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"atepp_supervisions_{part}.jsonl.gz"
+                output_dir / f"gigamidi_supervisions_{part}.jsonl.gz"
             )
-            recording_set.to_file(output_dir / f"atepp_recordings_{part}.jsonl.gz")
+            recording_set.to_file(output_dir / f"gigamidi_recordings_{part}.jsonl.gz")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
@@ -104,24 +104,24 @@ def prepare_atepp(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Prepare the ATEPP dataset manifests."
+        description="Prepare the gigamidi dataset manifests."
     )
     parser.add_argument(
         "--corpus-dir",
-        type=Pathlike,
+        type=str,
         required=True,
-        help="Path to the ATEPP corpus directory.",
+        help="Path to the gigamidi corpus directory.",
     )
     parser.add_argument(
         "--output-dir",
-        type=Pathlike,
+        type=str,
         default=None,
         help="Path to the output directory for manifests.",
     )
     
     args = parser.parse_args()
     
-    prepare_atepp(
+    prepare_gigamidi(
        corpus_dir=args.corpus_dir,
        output_dir=args.output_dir
     )

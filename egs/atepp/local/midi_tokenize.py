@@ -30,7 +30,7 @@ def process_with_expression_tokenizer(data_folder, target_folder):
     transcript_dir = corpus_dir / target_folder
     transcript_files = transcript_dir.rglob("*.midi")
     slens = {}
-    
+
     for file in tqdm(transcript_files):
         if os.path.isfile(file.parent / (str(file.stem) + ".npy")):
             continue
@@ -73,6 +73,6 @@ if __name__ == "__main__":
     parser.add_argument("--target_folder", type=str, default="midi_seg", help="Target folder to save processed files")
     
     args = parser.parse_args()
-    
+
     process_with_expression_tokenizer(args.data_folder, args.target_folder)
     print("Processing completed.")

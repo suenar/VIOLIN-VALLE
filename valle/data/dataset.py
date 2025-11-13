@@ -159,9 +159,18 @@ class MidiSynthesisDataset(torch.utils.data.Dataset):
         for transform in self.feature_transforms:
             audio_features = transform(audio_features)
 
-        midi_tokens, midi_tokens_lens = self.midi_token_collater(
-            [cut.supervisions[0].custom["tokens"]["midi"] for cut in cuts]
-        )
+        valid_midi_tokens = [
+            cut.supervisions[0].custom["tokens"]["midi"] 
+            for cut in cuts 
+                if len(cut.supervisions[0].custom["tokens"]["midi"]) > 0
+        ]
+
+        if len(valid_midi_tokens) > 0:
+            midi_tokens, midi_tokens_lens = self.midi_token_collater(valid_midi_tokens)
+        else:
+            print('Warning: MIDI Token List is Empty at This Specific Cut')
+            midi_tokens = torch.empty(0, dtype=torch.int64)
+            midi_tokens_lens = torch.IntTensor([])
 
         return {
             "utt_id": [cut.id for cut in cuts],

@@ -12,8 +12,8 @@ stop_stage=3
 
 dataset_parts="--dataset-parts all"  # all
 
-folder_name=data
-audio_extractor="Encodec32FT"  # or Fbank
+folder_name=data_version_2
+audio_extractor="Encodec32Violin"  # or Fbank
 audio_feats_dir=${folder_name}/tokenized
 
 . shared/parse_options.sh || exit 1
@@ -30,48 +30,48 @@ log() {
 }
 
 if [ $stage -le 2 ] && [ $stop_stage -ge 2 ]; then
-  log "Stage 2: Tokenize/Fbank ATEPP"
+  log "Stage 2: Tokenize/Fbank gigamidi"
   mkdir -p ${audio_feats_dir}
-  if [ ! -e ${audio_feats_dir}/.atepp.tokenize.done ]; then
+  if [ ! -e ${audio_feats_dir}/.gigamidi.tokenize.done ]; then
     python3 bin/tokenizer.py --dataset-parts "${dataset_parts}" \
         --audio-extractor ${audio_extractor} \
         --batch-duration 200 \
         --src-dir "${folder_name}/manifests" \
         --output-dir "${audio_feats_dir}"
   fi
-  touch ${audio_feats_dir}/.atepp.tokenize.done
+  touch ${audio_feats_dir}/.gigamidi.tokenize.done
 fi
 
 if [ $stage -le 3 ] && [ $stop_stage -ge 3 ]; then
-  log "Stage 3: Prepare ATEPP train/validation/test"
-  if [ ! -e ${audio_feats_dir}/.atepp.train.done ]; then
+  log "Stage 3: Prepare gigamidi train/validation/test"
+  if [ ! -e ${audio_feats_dir}/.gigamidi.train.done ]; then
     if [ "${dataset_parts}" == "--dataset-parts all" ];then
       # train
       lhotse copy \
-        ${audio_feats_dir}/atepp_cuts_train.jsonl.gz \
+        ${audio_feats_dir}/gigamidi_cuts_train.jsonl.gz \
         ${audio_feats_dir}/cuts_train.jsonl.gz
 
       # dev
       lhotse copy \
-        ${audio_feats_dir}/atepp_cuts_validation.jsonl.gz \
+        ${audio_feats_dir}/gigamidi_cuts_validation.jsonl.gz \
         ${audio_feats_dir}/cuts_validation.jsonl.gz
     else  # debug
       # train
       lhotse copy \
-        ${audio_feats_dir}/atepp_cuts_validation.jsonl.gz \
+        ${audio_feats_dir}/gigamidi_cuts_validation.jsonl.gz \
         ${audio_feats_dir}/cuts_train.jsonl.gz
       # dev
       lhotse subset --first 400 \
-        ${audio_feats_dir}/atepp_cuts_test.jsonl.gz \
+        ${audio_feats_dir}/gigamidi_cuts_test.jsonl.gz \
         ${audio_feats_dir}/cuts_validation.jsonl.gz
     fi
 
     # test
     lhotse copy \
-      ${audio_feats_dir}/atepp_cuts_test.jsonl.gz \
+      ${audio_feats_dir}/gigamidi_cuts_test.jsonl.gz \
       ${audio_feats_dir}/cuts_test.jsonl.gz
 
-    touch ${audio_feats_dir}/.atepp.train.done
+    touch ${audio_feats_dir}/.gigamidi.train.done
   fi
 fi
 
