@@ -90,6 +90,11 @@ def prepare_gigamidi(
         recording_set = RecordingSet.from_recordings(recordings)
         supervision_set = SupervisionSet.from_segments(supervisions)
         recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
+        
+        # Remove recordings that don't have corresponding supervisions
+        supervision_recording_ids = set(sup.recording_id for sup in supervision_set)
+        recording_set = recording_set.filter(lambda r: r.id in supervision_recording_ids)
+        
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
