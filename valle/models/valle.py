@@ -781,6 +781,8 @@ class VALLE(VALLF):
         prefix_mode: int = 0,
         share_embedding: bool = True,
         nar_scale_factor: float = 1.0,
+        prepend_bos: bool = False,
+        num_quantizers: int = 8,
         **kwargs,
     ):
         """
@@ -803,7 +805,8 @@ class VALLE(VALLF):
             prefix_mode=prefix_mode,
             share_embedding=share_embedding,
             nar_scale_factor=nar_scale_factor,
-            **kwargs,
+            prepend_bos=prepend_bos,
+            num_quantizers=num_quantizers,
         )
 
     def forward(
