@@ -191,23 +191,16 @@ class ReaperMIDIRenderer:
                 # Mark project as clean before closing to prevent save dialog
                 self._mark_project_clean()
                 # Close existing project and create a new one
-                self.project.close(save=False)  # Explicitly don't save
+                # Use PreventUIRefresh to suppress the save dialog
+                reapy.reascript_api.PreventUIRefresh(1)
+                try:
+                    self.project.close(save=False)  # Explicitly don't save
+                finally:
+                    reapy.reascript_api.PreventUIRefresh(-1)
             
             # Clear existing tracks
             # logger.info("Clearing project...")
             self.project = reapy.Project()
-            
-            # Set project tempo mode to prevent tempo mapping dialog
-            # Use action: "Project settings: Open project settings" and set tempo mode
-            # Or use GetSetProjectInfo to set tempo settings
-            try:
-                # Set project to ignore MIDI tempo
-                # This prevents the tempo mapping dialog
-                reapy.reascript_api.GetSetProjectInfo_String(
-                    self.project.id, 'PROJTEMPO_USE', '0', True
-                )
-            except Exception as e:
-                logger.debug(f"Could not set tempo mode: {e}")
 
             # Add a new track
             # logger.info("Creating MIDI track...")
@@ -218,22 +211,21 @@ class ReaperMIDIRenderer:
             # logger.info(f"Importing MIDI file: {midi_path}")
             reapy.reascript_api.SetEditCurPos(0, True, False)
             
-            # Set to ignore tempo before importing
-            # Action ID 40766: Options: Toggle auto-crossfade on split
-            # Action ID 41208: Project settings: Set tempo/time signature marker at play/edit cursor
+            # Prevent UI refresh and dialogs during import
+            # This suppresses the tempo mapping confirmation dialog
+            # while still allowing the tempo mapping to occur based on your settings
+            reapy.reascript_api.PreventUIRefresh(1)
             
-            # Use InsertMedia with mode flag to suppress dialogs
-            # Mode 0 = default behavior
-            # Mode 1 = insert at end of project
-            # Mode 3 = Insert media and trim to time selection
-            # Try different flags to avoid tempo dialog
-            
-            # Before importing, ensure Reaper doesn't prompt for tempo
-            # Set the project tempo manually first
-            self.project.bpm = 120  # Set a default tempo
-            
-            # Insert MIDI file as media item
-            import_result = reapy.reascript_api.InsertMedia(midi_path, 0)
+            try:
+                # Insert MIDI file as media item
+                # The tempo mapping will happen automatically based on your Reaper preferences
+                # but without showing the confirmation dialog
+                import_result = reapy.reascript_api.InsertMedia(midi_path, 0)
+            finally:
+                # Always restore UI refresh even if import fails
+                reapy.reascript_api.PreventUIRefresh(-1)
+                # Force UI update after import
+                reapy.reascript_api.UpdateArrange()
             if import_result == 0:
                 logger.error(f"Failed to import MIDI file: {midi_path}")
                 return False
