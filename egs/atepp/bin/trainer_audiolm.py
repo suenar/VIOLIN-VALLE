@@ -8,17 +8,17 @@
 Usage example:
 
 python3 bin/trainer_audiolm.py \
-    --model-name audio-lm \
+    --model-name VALLE-audio \
     --decoder-dim 1024 --nhead 16 --num-decoder-layers 12 \
     --base-lr 0.05 --warmup-steps 200 \
     --num-epochs 20 --start-epoch 1 \
-    --exp-dir exp/audio-lm \
+    --exp-dir exp/VALLE-audio \
     --dataset atepp --max-duration 150 \
     --num-quantizers 4 \
     --train-stage 0 \
     --manifest-dir "data/tokenized" \
-    --filter-min-duration 3 \
-    --filter-max-duration 10
+    --filter-min-duration 5 \
+    --filter-max-duration 20
 """
 
 import sys
@@ -116,6 +116,36 @@ def compute_loss_audiolm(
     return predicts, loss, info
 
 
+def compute_validation_loss_audiolm(
+    params: AttributeDict,
+    model: Union[nn.Module, DDP],
+    valid_dl: torch.utils.data.DataLoader,
+    world_size: int = 1,
+) -> MetricsTracker:
+    """Run the validation process for AudioLM."""
+    tot_loss = MetricsTracker()
+
+    for batch_idx, batch in enumerate(valid_dl):
+        predicts, loss, loss_info = compute_loss_audiolm(
+            params=params,
+            model=model,
+            batch=batch,
+            is_training=False,
+        )
+        assert loss.requires_grad is False
+        tot_loss = tot_loss + loss_info
+    
+    if world_size > 1:
+        tot_loss.reduce(loss.device)
+    
+    loss_value = tot_loss["loss"] / tot_loss["frames"]
+    if loss_value < params.best_valid_loss:
+        params.best_valid_epoch = params.cur_epoch
+        params.best_valid_loss = loss_value
+
+    return tot_loss
+
+
 # Override train_one_epoch to use the new compute_loss
 def train_one_epoch_audiolm(
     params: AttributeDict,
@@ -152,7 +182,7 @@ def train_one_epoch_audiolm(
 
         batch_idx += 1
         params.batch_idx_train += 1
-        batch_size = len(batch["midi"])  # Still using this key for batch size
+        batch_size = len(batch["audio_features"])
 
         try:
             with torch.cuda.amp.autocast(dtype=dtype, enabled=enabled):
@@ -287,36 +317,6 @@ def train_one_epoch_audiolm(
         params.best_train_loss = params.train_loss
 
 
-def compute_validation_loss_audiolm(
-    params: AttributeDict,
-    model: Union[nn.Module, DDP],
-    valid_dl: torch.utils.data.DataLoader,
-    world_size: int = 1,
-) -> MetricsTracker:
-    """Run the validation process for AudioLM."""
-    tot_loss = MetricsTracker()
-
-    for batch_idx, batch in enumerate(valid_dl):
-        predicts, loss, loss_info = compute_loss_audiolm(
-            params=params,
-            model=model,
-            batch=batch,
-            is_training=False,
-        )
-        assert loss.requires_grad is False
-        tot_loss = tot_loss + loss_info
-    
-    if world_size > 1:
-        tot_loss.reduce(loss.device)
-    
-    loss_value = tot_loss["loss"] / tot_loss["frames"]
-    if loss_value < params.best_valid_loss:
-        params.best_valid_epoch = params.cur_epoch
-        params.best_valid_loss = loss_value
-
-    return tot_loss
-
-
 # Override run function to use modified training
 def run_audiolm(rank, world_size, args):
     """Modified run function for AudioLM training."""
@@ -365,12 +365,65 @@ def run_audiolm(rank, world_size, args):
         model = DDP(model, device_ids=[rank], find_unused_parameters=True)
 
     # Setup optimizer
+    # if params.model_name.lower() in ["valle-audio", "valle_audio"]:
+    #     if params.train_stage:
+    #         _model = model.valle-audio.module if isinstance(model.valle-audio, DDP) else model.valle-audio
+    #         model_parameters = _model.stage_parameters(params.train_stage)
+    #     else:
+    #         model_parameters = model.valle-audio.parameters()
+    # else:     
+    #     if params.train_stage:
+    #         _model = model.module if isinstance(model, DDP) else model
+    #         model_parameters = _model.stage_parameters(params.train_stage)
+    #     else:
+    #         model_parameters = model.parameters()
+
     if params.optimizer_name == "ScaledAdam":
+        parameters_names = []
+        if params.model_name.lower() in ["valle-audio", "valle_audio"]:
+            if params.train_stage:  # != 0
+                _model = model.valle.module if isinstance(model.valle, DDP) else model.valle
+                parameters_names.append(
+                    [
+                        name_param_pair[0]
+                        for name_param_pair in _model.stage_named_parameters(
+                            params.train_stage
+                        )
+                    ]
+                )
+            else:
+                parameters_names.append(
+                    [
+                        name_param_pair[0]
+                        for name_param_pair in model.named_parameters()
+                    ]
+                )
+        else:
+            if params.train_stage:  # != 0
+                _model = model.module if isinstance(model, DDP) else model
+                parameters_names.append(
+                    [
+                        name_param_pair[0]
+                        for name_param_pair in _model.stage_named_parameters(
+                            params.train_stage
+                        )
+                    ]
+                )
+            else:
+                parameters_names.append(
+                    [
+                        name_param_pair[0]
+                        for name_param_pair in model.named_parameters()
+                    ]
+                )
         optimizer = ScaledAdam(
             model.parameters(),
             lr=params.base_lr,
             betas=(0.9, 0.95),
             clipping_scale=2.0,
+            parameters_names=parameters_names,
+            show_dominant_parameters=False,
+            clipping_update_period=1000,
         )
     elif params.optimizer_name == "AdamW":
         optimizer = torch.optim.AdamW(

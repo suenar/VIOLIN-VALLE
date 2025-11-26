@@ -534,6 +534,12 @@ def compute_loss(
     audio_features_lens = batch["audio_features_lens"].to(device)
     assert audio_features.ndim == 3
     
+    # min_bs = min(midi_tokens.shape[0], audio_features.shape[0])
+    # midi_tokens = midi_tokens[:min_bs]
+    # midi_tokens_lens = ssmidi_tokens_lens[:min_bs]
+    # audio_features = audio_features[:min_bs]
+    # audio_features_lens = audio_features_lens[:min_bs]
+
     if params.model_name.lower() in ["bert-valle", "bertvalle"]:
         with torch.set_grad_enabled(is_training):
             predicts, loss, metrics = model(

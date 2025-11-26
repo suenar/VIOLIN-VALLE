@@ -43,6 +43,7 @@ from valle.data import (
     AudioTokenizer,
     AudioTokenizer32,
     AudioTokenizer32FT,
+    AudioTokenizer32Violin,
     tokenize_audio,
 )
 from valle.data.collation import get_midi_token_collater, get_midi_token_collater
@@ -143,7 +144,6 @@ def load_model(checkpoint, device):
         return None
 
     checkpoint = torch.load(checkpoint, map_location=device)
-
     args = AttributeDict(checkpoint)
     args['model_name'] = 'valle'
     args['decoder_dim'] = 1024
@@ -160,7 +160,7 @@ def load_model(checkpoint, device):
     model = get_model(args)
     
     missing_keys, unexpected_keys = model.load_state_dict(
-        checkpoint, strict=True
+        checkpoint['model'], strict=True
     )
     assert not missing_keys
     model.to(device)
@@ -177,7 +177,7 @@ def main():
     model = load_model(args.checkpoint, device)
     midi_collater = get_midi_token_collater()
 
-    audio_tokenizer = AudioTokenizer32FT()
+    audio_tokenizer = AudioTokenizer32Violin()
         
     if os.path.isfile(f"{args.output_dir}/{args.output_file}.wav"):
         return
@@ -195,8 +195,10 @@ def main():
         assert len(args.midi_prompts.split("|")) == len(audio_prompts)
         audio_prompts = torch.concat(audio_prompts, dim=-1).transpose(2, 1)
         audio_prompts = audio_prompts.to(device)
-
-    midi_prompts = np.load(midi_prompts)
+    try:
+        midi_prompts = np.load(midi_prompts, allow_pickle=True)
+    except:
+        midi_prompts = np.array([])
 
     model.eval()
 

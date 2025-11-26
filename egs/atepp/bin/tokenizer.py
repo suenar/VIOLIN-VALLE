@@ -39,6 +39,7 @@ from valle.data import (
     AudioTokenExtractor,
     AudioTokenExtractor32,
     AudioTokenExtractor32FT,
+    AudioTokenExtractor32Violin,
     # TextTokenizer,
     # tokenize_text,
 )
@@ -88,7 +89,7 @@ def get_args():
     parser.add_argument(
         "--prefix",
         type=str,
-        default="atepp",
+        default="gigamidi",
         help="prefix of the manifest file",
     )
     parser.add_argument(
@@ -139,12 +140,14 @@ def main():
             audio_extractor = AudioTokenExtractor32(AudioTokenConfig32())
         elif args.audio_extractor == "Encodec32FT":
             audio_extractor = AudioTokenExtractor32FT(AudioTokenConfig32())
+        elif args.audio_extractor == "Encodec32Violin":
+            audio_extractor = AudioTokenExtractor32Violin(AudioTokenConfig32())
         else:
             assert args.audio_extractor == "Fbank"
             audio_extractor = get_fbank_extractor()
 
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-    num_jobs = min(4, os.cpu_count())
+    num_jobs = min(1, os.cpu_count())
     logging.info(f"dataset_parts: {dataset_parts} manifests {len(manifests)}")
 
     prefix = args.prefix
@@ -177,6 +180,10 @@ def main():
                     storage_path = (
                         f"{args.output_dir}/{args.prefix}_encodec_{partition}"
                     )
+                elif args.audio_extractor == "Encodec32Violin":
+                    storage_path = (
+                        f"{args.output_dir}/{args.prefix}_encodec_{partition}"
+                    )
                 else:
                     storage_path = (
                         f"{args.output_dir}/{args.prefix}_fbank_{partition}"
@@ -195,7 +202,7 @@ def main():
                 with torch.no_grad():
                     if (
                         torch.cuda.is_available()
-                        and args.audio_extractor in ["Encodec", "Encodec32", "Encodec32FT"]
+                        and args.audio_extractor in ["Encodec", "Encodec32", "Encodec32FT", "Encodec32Violin"]
                     ):
                         cut_set = cut_set.compute_and_store_features_batch(
                             extractor=audio_extractor,
@@ -215,9 +222,10 @@ def main():
                             storage_type=NumpyHdf5Writer,
                         )
 
+            logging.info(f"Tokenizing Text in Batch")
             # MidiTokens
             for c in tqdm(cut_set):
-                tokens = np.load(c.supervisions[0].text).tolist()
+                tokens = np.load(c.supervisions[0].text).tolist() 
                 c.supervisions[0].custom = {}
                 c.supervisions[0].custom["tokens"] = {"midi": tokens}
 
