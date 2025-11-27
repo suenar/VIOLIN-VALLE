@@ -84,9 +84,10 @@ class VALLE_Audio(nn.Module):
         # AR: Target audio embedding (first quantizer only)
         # +1 for PAD, +1 for BOS
         self.ar_audio_prepend_bos = prepend_bos
-        self.ar_audio_embedding = TokenEmbedding(
-            d_model, NUM_AUDIO_TOKENS + 1 + int(prepend_bos)
-        )
+        self.ar_audio_embedding = nn.ModuleList([
+            TokenEmbedding(d_model, NUM_AUDIO_TOKENS)
+            for _ in range(num_quantizers)
+        ])
         
         # PreNet
         if add_prenet:
@@ -349,8 +350,12 @@ class VALLE_Audio(nn.Module):
         y_mask = make_pad_mask(y_lens).to(y.device)
         y_mask_int = y_mask.type(torch.int64)
         
-        # Embed prompt audio (sum over all quantizers)
-        prompt = self.ar_audio_embedding(x)
+
+        # Convert to int64 for embeddings
+        x = x.type(torch.int64)
+        prompt = self.ar_audio_embedding[0](x[..., 0])
+        for q in range(1, self.num_quantizers):
+            prompt = prompt + self.ar_audio_embedding[q](x[..., q])
         
         prompt = self.ar_audio_prenet(prompt)
         prompt = self.ar_audio_position(prompt)
@@ -537,8 +542,13 @@ class VALLE_Audio(nn.Module):
         
         device = x.device
         
-        # Embed prompt audio
-        prompt = self.ar_audio_embedding(x)
+        # Convert to int64 for embeddings
+        x = x.type(torch.int64)
+        
+        # Embed prompt audio (sum over all quantizers)
+        prompt = self.ar_audio_embeddin[0](x[..., 0])
+        for q in range(1, self.num_quantizers):
+            prompt = prompt + self.ar_audio_embeddin[q](x[..., q])
         
         prompt = self.ar_audio_prenet(prompt)
         prompt = self.ar_audio_position(prompt)
