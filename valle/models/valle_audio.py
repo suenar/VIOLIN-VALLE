@@ -553,9 +553,12 @@ class VALLE_Audio(nn.Module):
         
         # Save original x for potential concatenation later
         x_original = x.clone()
+        print(f"[DEBUG] Initial x shape: {x.shape}, dtype: {x.dtype}")
+        print(f"[DEBUG] x_original shape: {x_original.shape}, dtype: {x_original.dtype}")
         
         # Convert to int64 for embeddings
         x = x.type(torch.int64)
+        print(f"[DEBUG] After int64 conversion, x shape: {x.shape}")
         
         # Embed prompt audio (sum over all quantizers)
         prompt = self.ar_prompt_embeddings[0](x[..., 0])
@@ -659,9 +662,16 @@ class VALLE_Audio(nn.Module):
         
         assert len(codes) == self.num_quantizers
         
+        # Debug: print shapes of codes
+        print(f"[DEBUG] Number of code tensors: {len(codes)}")
+        for i, code in enumerate(codes):
+            print(f"[DEBUG] codes[{i}] shape: {code.shape}")
+        
         # Stack codes: (1, T, Q)
         # Each element in codes has shape (1, T), stacking along last dim gives (1, T, Q)
         generated_codes = torch.stack(codes, dim=-1)
+        print(f"[DEBUG] After stacking, generated_codes shape: {generated_codes.shape}")
+        print(f"[DEBUG] x_original shape: {x_original.shape}")
         
         # Ensure generated_codes matches the dtype of x_original
         if generated_codes.dtype != x_original.dtype:
@@ -670,7 +680,10 @@ class VALLE_Audio(nn.Module):
         # Optionally concatenate with prompt
         if return_full_sequence:
             # x_original shape: (1, S, Q), generated_codes shape: (1, T, Q)
+            print(f"[DEBUG] Before concat: x_original={x_original.shape}, generated_codes={generated_codes.shape}")
             # Concatenate along sequence dimension to get (1, S+T, Q)
-            return torch.cat([x_original, generated_codes], dim=1)
+            result = torch.cat([x_original, generated_codes], dim=1)
+            print(f"[DEBUG] After concat: result shape={result.shape}")
+            return result
         else:
             return generated_codes
