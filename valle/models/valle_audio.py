@@ -551,6 +551,9 @@ class VALLE_Audio(nn.Module):
         
         device = x.device
         
+        # Save original x for potential concatenation later
+        x_original = x.clone()
+        
         # Convert to int64 for embeddings
         x = x.type(torch.int64)
         
@@ -657,10 +660,17 @@ class VALLE_Audio(nn.Module):
         assert len(codes) == self.num_quantizers
         
         # Stack codes: (1, T, Q)
+        # Each element in codes has shape (1, T), stacking along last dim gives (1, T, Q)
         generated_codes = torch.stack(codes, dim=-1)
+        
+        # Ensure generated_codes matches the dtype of x_original
+        if generated_codes.dtype != x_original.dtype:
+            generated_codes = generated_codes.to(dtype=x_original.dtype)
         
         # Optionally concatenate with prompt
         if return_full_sequence:
-            return torch.cat([x, generated_codes], dim=1)
+            # x_original shape: (1, S, Q), generated_codes shape: (1, T, Q)
+            # Concatenate along sequence dimension to get (1, S+T, Q)
+            return torch.cat([x_original, generated_codes], dim=1)
         else:
             return generated_codes

@@ -285,16 +285,26 @@ def main():
         
         # Generate audio continuation (full sequence: prompt + generated)
         logging.info("Starting generation...")
-        full_sequence = model.inference(
-            x=audio_prompt,
-            x_lens=audio_prompt_lens,
-            max_new_tokens=max_new_tokens,
-            top_k=args.top_k,
-            temperature=args.temperature,
-            return_full_sequence=True,
-        )
+        logging.info(f"Input audio_prompt shape: {audio_prompt.shape}")
+        logging.info(f"Input audio_prompt dtype: {audio_prompt.dtype}")
         
-        logging.info(f"Full sequence shape: {full_sequence.shape}")
+        try:
+            full_sequence = model.inference(
+                x=audio_prompt,
+                x_lens=audio_prompt_lens,
+                max_new_tokens=max_new_tokens,
+                top_k=args.top_k,
+                temperature=args.temperature,
+                return_full_sequence=True,
+            )
+            
+            logging.info(f"Full sequence shape: {full_sequence.shape}")
+            logging.info(f"Full sequence dtype: {full_sequence.dtype}")
+        except Exception as e:
+            logging.error(f"Error during generation: {e}")
+            logging.error(f"audio_prompt shape: {audio_prompt.shape}")
+            logging.error(f"audio_prompt_lens: {audio_prompt_lens}")
+            raise
         
         # Decode to audio
         # full_sequence shape: (1, T_total, Q)
