@@ -526,6 +526,7 @@ class VALLE_Audio(nn.Module):
         max_new_tokens: int = 500,
         top_k: int = -100,
         temperature: float = 1.0,
+        return_full_sequence: bool = True,
     ) -> torch.Tensor:
         """
         Generate audio tokens autoregressively.
@@ -536,9 +537,11 @@ class VALLE_Audio(nn.Module):
             max_new_tokens: Maximum number of tokens to generate
             top_k: Top-k sampling
             temperature: Sampling temperature
+            return_full_sequence: If True, return prompt + generated tokens.
+                                 If False, return only generated tokens.
             
         Returns:
-            Generated audio tokens (1, S+T, Q)
+            Generated audio tokens (1, T, Q) or (1, S+T, Q) depending on return_full_sequence
         """
         from valle.models.valle import topk_sampling
         
@@ -652,4 +655,12 @@ class VALLE_Audio(nn.Module):
                 y_emb = y_emb + embedding_layer(samples)
         
         assert len(codes) == self.num_quantizers
-        return torch.stack(codes, dim=-1)
+        
+        # Stack codes: (1, T, Q)
+        generated_codes = torch.stack(codes, dim=-1)
+        
+        # Optionally concatenate with prompt
+        if return_full_sequence:
+            return torch.cat([x, generated_codes], dim=1)
+        else:
+            return generated_codes
