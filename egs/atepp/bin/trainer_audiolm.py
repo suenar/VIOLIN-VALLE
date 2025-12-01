@@ -8,7 +8,7 @@
 Usage example:
 
 python3 bin/trainer_audiolm.py \
-    --model-name VALLE-audio \
+    --model-name VALLE-audio --num-buckets 12 --save-every-n 20000\
     --decoder-dim 1024 --nhead 16 --num-decoder-layers 12 \
     --base-lr 0.05 --warmup-steps 200 \
     --num-epochs 20 --start-epoch 1 \
@@ -16,9 +16,9 @@ python3 bin/trainer_audiolm.py \
     --dataset atepp --max-duration 150 \
     --num-quantizers 4 \
     --train-stage 0 \
-    --manifest-dir "data/tokenized" \
-    --filter-min-duration 5 \
-    --filter-max-duration 20
+    --manifest-dir "data/tokenized"\
+    --filter-min-duration 8 --inf-check True\
+    --filter-max-duration 20 --world-size 1
 """
 
 import sys

@@ -84,7 +84,10 @@ class VALLE_Audio(nn.Module):
         # AR: Target audio embedding (first quantizer only)
         # +1 for PAD, +1 for BOS
         self.ar_audio_prepend_bos = prepend_bos
-        self.ar_audio_embedding = nn.ModuleList([
+        self.ar_audio_embedding = TokenEmbedding(
+            d_model, NUM_AUDIO_TOKENS + 1 + int(prepend_bos)
+        )       
+        self.ar_prompt_embeddings = nn.ModuleList([
             TokenEmbedding(d_model, NUM_AUDIO_TOKENS)
             for _ in range(num_quantizers)
         ])
@@ -353,9 +356,9 @@ class VALLE_Audio(nn.Module):
 
         # Convert to int64 for embeddings
         x = x.type(torch.int64)
-        prompt = self.ar_audio_embedding[0](x[..., 0])
+        prompt = self.ar_prompt_embeddings[0](x[..., 0])
         for q in range(1, self.num_quantizers):
-            prompt = prompt + self.ar_audio_embedding[q](x[..., q])
+            prompt = prompt + self.ar_prompt_embeddings[q](x[..., q])
         
         prompt = self.ar_audio_prenet(prompt)
         prompt = self.ar_audio_position(prompt)
@@ -520,6 +523,7 @@ class VALLE_Audio(nn.Module):
         max_new_tokens: int = 500,
         top_k: int = -100,
         temperature: float = 1.0,
+        return_full_sequence: bool = False,
     ) -> torch.Tensor:
         """
         Generate audio tokens autoregressively.
@@ -542,13 +546,15 @@ class VALLE_Audio(nn.Module):
         
         device = x.device
         
+        x_original = x.clone()
+
         # Convert to int64 for embeddings
         x = x.type(torch.int64)
         
         # Embed prompt audio (sum over all quantizers)
-        prompt = self.ar_audio_embeddin[0](x[..., 0])
+        prompt = self.ar_prompt_embeddings[0](x[..., 0])
         for q in range(1, self.num_quantizers):
-            prompt = prompt + self.ar_audio_embeddin[q](x[..., q])
+            prompt = prompt + self.ar_prompt_embeddings[q](x[..., q])
         
         prompt = self.ar_audio_prenet(prompt)
         prompt = self.ar_audio_position(prompt)
@@ -646,4 +652,19 @@ class VALLE_Audio(nn.Module):
                 y_emb = y_emb + embedding_layer(samples)
         
         assert len(codes) == self.num_quantizers
-        return torch.stack(codes, dim=-1)
+        
+        # Stack codes: (1, T, Q)
+        # Each element in codes has shape (1, T), stacking along last dim gives (1, T, Q)
+        generated_codes = torch.stack(codes, dim=-1)
+        
+        # Ensure generated_codes matches the dtype of x_original
+        if generated_codes.dtype != x_original.dtype:
+            generated_codes = generated_codes.to(dtype=x_original.dtype)
+        
+        # Optionally concatenate with prompt
+        if return_full_sequence:
+            # x_original shape: (1, S, Q), generated_codes shape: (1, T, Q)
+            # Concatenate along sequence dimension to get (1, S+T, Q)
+            return torch.cat([x_original, generated_codes], dim=1)
+        else:
+            return generated_codes
